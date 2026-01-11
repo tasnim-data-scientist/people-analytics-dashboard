@@ -19,12 +19,19 @@ st.set_page_config(
 # Load data
 @st.cache_data
 def load_data():
-    df = pd.read_csv('../data/cleaned_data.csv')
+    # Get the project root directory
+    import os
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_path = os.path.join(root_dir, 'data', 'cleaned_data.csv')
+    df = pd.read_csv(data_path)
     return df
 
 @st.cache_resource
 def load_model():
-    return joblib.load('../models/attrition_model.pkl')
+    import os
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    model_path = os.path.join(root_dir, 'models', 'attrition_model.pkl')
+    return joblib.load(model_path)
 
 # Load data and model
 try:
