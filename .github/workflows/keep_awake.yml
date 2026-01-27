@@ -1,0 +1,16 @@
+name: Keep Streamlit App Awake
+on:
+  schedule:
+    - cron: '0 */10 * * *' # Runs every 10 hours
+  workflow_dispatch: # Allows manual wake-up
+jobs:
+  wake-up:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: streamlit/streamlit-app-action@v0.0.3
+        with:
+          app-path: streamlit_app.py
