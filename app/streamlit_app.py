@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # Load data
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_data():
     # Get the project root directory
     import os
@@ -33,14 +33,13 @@ def load_model():
     model_path = os.path.join(root_dir, 'models', 'attrition_model.pkl')
     return joblib.load(model_path)
 
-# Load data and model
-try:
-    df = load_data()
-    model = load_model()
-    st.success("✅ Data and model loaded successfully!")
-except Exception as e:
-    st.error(f"Error loading data: {e}")
-    st.stop()
+with st.spinner("Waking up the dashboard..."):
+    try:
+        df = load_data()
+        model = load_model()
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        st.stop()
 
 # Main title
 st.title("👥 People Analytics Dashboard")
