@@ -1,16 +1,14 @@
-name: Keep Streamlit App Awake
+name: Keep Streamlit Cloud App Warm
+
 on:
   schedule:
-    - cron: '0 */10 * * *' # Runs every 10 hours
-  workflow_dispatch: # Allows manual wake-up
+    - cron: '0 */3 * * *' # every 3 hours (UTC)
+  workflow_dispatch:
+
 jobs:
-  wake-up:
+  ping:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - uses: streamlit/streamlit-app-action@v0.0.3
-        with:
-          app-path: app/streamlit_app.py
+      - name: Ping app
+        run: |
+          curl -L -I https://people-analytics-dashboard-v1.streamlit.app/
