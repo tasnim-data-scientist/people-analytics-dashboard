@@ -11,4 +11,4 @@ jobs:
     steps:
       - name: Ping app
         run: |
-          curl -L --max-redirs 5 -I https://people-analytics-dashboard-v1.streamlit.app/
+          curl -s https://people-analytics-dashboard-v1.streamlit.app/ > /dev/null || true
