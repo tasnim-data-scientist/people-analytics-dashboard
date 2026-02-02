@@ -1,14 +1,169 @@
-name: Keep Streamlit Cloud App Warm
+name: Keep Streamlit App Awake (Selenium)
 
 on:
   schedule:
-    - cron: '0 */3 * * *' # every 3 hours (UTC)
+    - cron: '0 */3 * * *'   # every 3 hours (UTC)
   workflow_dispatch:
 
 jobs:
-  ping:
+  wake:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
-      - name: Ping app
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Selenium + driver manager
         run: |
-          curl -s https://people-analytics-dashboard-v1.streamlit.app/ > /dev/null || true
+          python -m pip install --upgrade pip
+          pip install selenium webdriver-manager
+
+      - name: Wake app via headless Chrome
+        env:
+          STREAMLIT_APP_URL: https://people-analytics-dashboard-v1.streamlit.app/
+          USER_AGENT: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) CopilotWake/1.0 Chrome/120 Safari/537.36"
+        run: |
+          python - <<'PY'
+          import os, time, sys
+          from selenium import webdriver
+          from selenium.webdriver.chrome.service import Service
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.support.ui import WebDriverWait
+          from selenium.webdriver.support import expected_conditions as EC
+          from webdriver_manager.chrome import ChromeDriverManager
+          from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+
+          URL = os.environ["STREAMLIT_APP_URL"].strip()
+          UA  = os.environ.get("USER_AGENT", "")
+
+          def make_driver():
+              opts = Options()
+              opts.add_argument("--headless=new")
+              opts.add_argument("--no-sandbox")
+              opts.add_argument("--disable-dev-shm-usage")
+              opts.add_argument("--window-size=1920,1080")
+              if UA:
+                  opts.add_argument(f"--user-agent={UA}")
+              return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+
+          def dismiss_cookie_banner(driver):
+              """
+              Some Streamlit/host setups show a cookie banner that can block the button.
+              Try common selectors; ignore quietly if not present.
+              """
+              try:
+                  # Try generic accept buttons
+                  candidates = [
+                      "//button[normalize-space(.)='Accept']",
+                      "//button[contains(., 'Accept all')]",
+                      "//button[contains(., 'I agree')]",
+                      "//button[contains(., 'OK')]",
+                  ]
+                  for xp in candidates:
+                      els = driver.find_elements(By.XPATH, xp)
+                      if els:
+                          for el in els:
+                              if el.is_enabled() and el.is_displayed():
+                                  try:
+                                      el.click()
+                                      print(f"Dismissed cookie banner via: {xp}")
+                                      time.sleep(0.5)
+                                      return
+                                  except ElementClickInterceptedException:
+                                      pass
+              except Exception:
+                  pass
+
+          def click_wake_button_in_context(ctx):
+              """
+              Click the 'Yes, get this app back up!' button if present in the given browsing context (page or frame).
+              Return True if clicked.
+              """
+              # Prefer exact label, then fallbacks
+              xpaths = [
+                  "//button[normalize-space(.)='Yes, get this app back up!']",
+                  "//button[contains(., 'get this app back up')]",
+                  "//button[contains(., 'get this app back online')]",
+                  "//button[contains(., 'wake')]",
+              ]
+              for xp in xpaths:
+                  try:
+                      btns = ctx.find_elements(By.XPATH, xp)
+                      for b in btns:
+                          if b.is_enabled() and b.is_displayed():
+                              b.click()
+                              print(f"Clicked wake button via XPath: {xp}")
+                              return True
+                  except Exception:
+                      continue
+              return False
+
+          def try_all_frames_then_click(driver):
+              # Main page first
+              if click_wake_button_in_context(driver):
+                  return True
+
+              # Then scan iframes
+              frames = driver.find_elements(By.TAG_NAME, "iframe")
+              for i, frame in enumerate(frames):
+                  try:
+                      driver.switch_to.frame(frame)
+                      if click_wake_button_in_context(driver):
+                          driver.switch_to.default_content()
+                          return True
+                      driver.switch_to.default_content()
+                  except Exception:
+                      driver.switch_to.default_content()
+              return False
+
+          driver = make_driver()
+          wait = WebDriverWait(driver, 25)
+
+          try:
+              print(f"Opening {URL}")
+              driver.get(URL)
+
+              # Let the interstitial render if present
+              time.sleep(6)
+
+              # Clear banner if it blocks clicks
+              dismiss_cookie_banner(driver)
+
+              clicked = try_all_frames_then_click(driver)
+
+              if not clicked:
+                  print("Wake button not found (app may already be awake or still loading the interstitial). Retrying once…")
+                  time.sleep(5)
+                  driver.refresh()
+                  time.sleep(6)
+                  dismiss_cookie_banner(driver)
+                  clicked = try_all_frames_then_click(driver)
+
+              # Give app time to boot after waking
+              time.sleep(12)
+
+              # Light smoke check: look for app container
+              try:
+                  driver.switch_to.default_content()
+                  root = wait.until(EC.presence_of_element_located(
+                      (By.CSS_SELECTOR, "div#root, section.main, div[data-testid='stAppViewContainer']")
+                  ))
+                  print("App appears responsive (root container present).")
+              except TimeoutException:
+                  print("App may still be booting; root container not confirmed in time.", file=sys.stderr)
+
+              print("Done.")
+          finally:
+              driver.quit()
+          PY
+
+      - name: Verify HTTP status (optional)
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" https://people-analytics-dashboard-v1.streamlit.app/)
+          echo "HTTP status after wake: $code"
